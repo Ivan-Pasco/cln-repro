@@ -305,12 +305,23 @@ RESP_BODY=$(mktemp)
 STATUS=$(curl -s -o "$RESP_BODY" -w "%{http_code}" "http://127.0.0.1:31245$URL")
 echo "[replay] status=$STATUS response_size=$(wc -c < "$RESP_BODY")"
 
+# Consolidated failure dumper — always shows enough context to diagnose
+# both content-of-response mismatches and 500s where node-server logs the
+# real trap.
+dump_failure_context() {
+  echo "[replay] --- response body (first 1500 chars) ---"
+  head -c 1500 "$RESP_BODY" 2>/dev/null || echo "(empty)"
+  echo ""
+  echo "[replay] --- node-server log tail (last 40 lines) ---"
+  tail -40 "$ROOT/replay.log" 2>/dev/null || echo "(no log)"
+  echo ""
+}
+
 # Expected status: parsed from expected.http first line
 EXPECTED_STATUS=$(head -1 "$ROOT/run/expected.http" | awk '{print $2}')
 if [[ "$STATUS" != "$EXPECTED_STATUS" ]]; then
   echo "[replay] FAIL: expected status $EXPECTED_STATUS, got $STATUS"
-  echo "[replay] response preview:"
-  head -c 500 "$RESP_BODY"
+  dump_failure_context
   exit 1
 fi
 
@@ -330,8 +341,7 @@ if [[ $FAIL -eq 0 ]]; then
   echo "[replay] PASS"
   exit 0
 else
-  echo "[replay] response preview:"
-  head -c 500 "$RESP_BODY"
+  dump_failure_context
   exit 1
 fi
 RUNSH

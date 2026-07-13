@@ -126,6 +126,36 @@ FCANVAS_VER=$(cat ~/.cleen/plugins/frame.canvas/.active-version 2>/dev/null || e
 } > "$WORK/env/versions.txt"
 echo "  compiler=$CLN_VER"
 
+# ---- bundle plugins referenced by --plugins into the tarball --------------
+# The tarball must be self-contained: fixer CI shouldn't need `cleen` to
+# replay. Copy the exact active versions of each plugin (plugin.toml and
+# any files cln reads) into the tarball, keyed under plugins/<name>/<ver>/.
+# run.sh will point cln at this directory instead of ~/.cleen/plugins/.
+if [[ -n "$PLUGINS" ]]; then
+  mkdir -p "$WORK/plugins"
+  IFS=',' read -ra P_LIST <<< "$PLUGINS"
+  for pname in "${P_LIST[@]}"; do
+    pname=$(echo "$pname" | tr -d ' ')
+    active_ver=$(cat "$HOME/.cleen/plugins/$pname/.active-version" 2>/dev/null || echo "")
+    if [[ -z "$active_ver" ]]; then
+      echo "  WARN: plugin '$pname' declared in --plugins but not installed locally; tarball will be incomplete"
+      continue
+    fi
+    src_dir="$HOME/.cleen/plugins/$pname"
+    dst_dir="$WORK/plugins/$pname"
+    mkdir -p "$dst_dir/$active_ver"
+    # Copy the specific active version's files (plugin.toml + companion files).
+    # Skip the older versions to keep tarball small.
+    if [[ -d "$src_dir/$active_ver" ]]; then
+      cp -R "$src_dir/$active_ver/." "$dst_dir/$active_ver/" 2>/dev/null || true
+    fi
+    # Also copy the top-level plugin.toml and .active-version marker if present.
+    [[ -f "$src_dir/plugin.toml" ]] && cp "$src_dir/plugin.toml" "$dst_dir/"
+    [[ -f "$src_dir/.active-version" ]] && cp "$src_dir/.active-version" "$dst_dir/"
+    echo "  bundled plugin: $pname@$active_ver"
+  done
+fi
+
 echo "[4/5] Computing fingerprint + writing manifest..."
 CAPTURED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -226,14 +256,30 @@ EXPECTED_EXIT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[
 PLUGINS=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); p=d["trigger"].get("plugins") or ""; print(p)' "$MANIFEST")
 
 echo "[replay] cln compile $SRC_FILE (expected_exit=$EXPECTED_EXIT)"
+
+# If tarball ships bundled plugins, point HOME at a temp dir so cln reads
+# our plugins/ instead of the runner's ~/.cleen/plugins/.
+CLEAN_HOME_OVERRIDE=""
+if [[ -d "$ROOT/plugins" ]]; then
+  CLEAN_HOME_OVERRIDE=$(mktemp -d)
+  mkdir -p "$CLEAN_HOME_OVERRIDE/.cleen"
+  ln -s "$ROOT/plugins" "$CLEAN_HOME_OVERRIDE/.cleen/plugins"
+  echo "[replay] using bundled plugins ($(ls "$ROOT/plugins" | tr '\n' ' '))"
+fi
+
 CLN_ARGS=(compile)
 [[ -n "$PLUGINS" ]] && CLN_ARGS+=(--plugins)
 CLN_ARGS+=(-o "$ROOT/replay.wasm" "$ROOT/source/$SRC_FILE")
 
 set +e
-cln "${CLN_ARGS[@]}" > "$ROOT/replay.stdout" 2> "$ROOT/replay.stderr"
+if [[ -n "$CLEAN_HOME_OVERRIDE" ]]; then
+  HOME="$CLEAN_HOME_OVERRIDE" cln "${CLN_ARGS[@]}" > "$ROOT/replay.stdout" 2> "$ROOT/replay.stderr"
+else
+  cln "${CLN_ARGS[@]}" > "$ROOT/replay.stdout" 2> "$ROOT/replay.stderr"
+fi
 ACTUAL_EXIT=$?
 set -e
+[[ -n "$CLEAN_HOME_OVERRIDE" ]] && rm -rf "$CLEAN_HOME_OVERRIDE"
 
 echo "[replay] actual_exit=$ACTUAL_EXIT expected_exit=$EXPECTED_EXIT"
 
@@ -267,11 +313,18 @@ if [[ $FAIL -eq 0 ]]; then
   echo "[replay] PASS"
   exit 0
 else
-  echo "[replay] --- stderr (first 500 chars) ---"
-  head -c 500 "$ROOT/replay.stderr" 2>/dev/null || echo "(empty)"
+  echo "[replay] --- stderr (first 1500 chars) ---"
+  head -c 1500 "$ROOT/replay.stderr" 2>/dev/null || echo "(empty)"
   echo ""
-  echo "[replay] --- stdout (first 500 chars) ---"
-  head -c 500 "$ROOT/replay.stdout" 2>/dev/null || echo "(empty)"
+  echo "[replay] --- stdout (first 1500 chars) ---"
+  head -c 1500 "$ROOT/replay.stdout" 2>/dev/null || echo "(empty)"
+  echo ""
+  # Detect infrastructure-level failures that would mask the actual bug:
+  if grep -qE "Plugin '.*' not found|Failed to load plugins" "$ROOT/replay.stdout" "$ROOT/replay.stderr" 2>/dev/null; then
+    echo "[replay] NOTE: 'Plugin not found' likely means the tarball's plugins/ was not bundled by the reporter,"
+    echo "[replay]       or the fixer runner's cln couldn't find them. Check that the tarball contains a"
+    echo "[replay]       plugins/ directory. This is an INFRASTRUCTURE failure, NOT the actual bug."
+  fi
   exit 1
 fi
 RUNSH
