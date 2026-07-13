@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cln-repro tarball manifest",
+  "type": "object",
+  "required": ["schema_version", "fingerprint", "component", "reporter", "environment", "trigger", "artifacts", "replay"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "component": {
+      "type": "string",
+      "enum": ["compiler", "node-server", "server", "framework", "extension", "manager", "canvas", "ui", "llm", "mcp"]
+    },
+    "reporter": {
+      "type": "object",
+      "required": ["project", "captured_at"],
+      "properties": {
+        "project": { "type": "string" },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "captured_by": { "type": "string" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "properties": {
+        "compiler": { "type": "string" },
+        "node_server": { "type": "string" },
+        "frame_ui": { "type": "string" },
+        "frame_server": { "type": "string" },
+        "frame_data": { "type": "string" }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["url", "method", "expected_status", "actual_status"],
+      "properties": {
+        "url": { "type": "string" },
+        "method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"] },
+        "expected_status": { "type": "integer" },
+        "actual_status": { "type": "integer" },
+        "expected_response_matches": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Substrings that MUST appear in the response body for the test to pass"
+        },
+        "actual_response_matches": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Substrings observed in the failing response — recorded for debugging, not asserted"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["wasm_sha256", "wasm_size"],
+      "properties": {
+        "wasm_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "wasm_size": { "type": "integer" },
+        "source_root": { "type": "string" },
+        "fixture_row_count": { "type": "integer" }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "required": ["entry", "expected_exit_code"],
+      "properties": {
+        "entry": { "type": "string", "description": "Command to execute, relative to tarball root" },
+        "expected_exit_code": { "type": "integer" },
+        "timeout_seconds": { "type": "integer", "default": 60 }
+      }
+    }
+  }
+}

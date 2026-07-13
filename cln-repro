@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# cln-repro — reproduction bundler for the closed-loop bug workflow.
+#
+# See README.md for the full spec. Two subcommands:
+#   capture — bundle a failing HTTP request into a tarball + file GitHub issue
+#   run     — replay a tarball locally, exit non-zero on any mismatch
+#
+# Dependencies: bash, python3, mysqldump, tar, sha256sum (or shasum),
+# curl, gh (for capture only).
+set -euo pipefail
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+CMD="${1:-}"
+
+if [[ -z "$CMD" ]]; then
+  cat <<EOF
+Usage:
+  cln-repro capture --url <url> --db <mysql-url> --wasm <path> --source <path> \\
+                    --component <target> --expected-match <str> [--expected-match ...] \\
+                    [--repo <owner/name>] [--no-file]
+      Capture a failing HTTP request (dashboard-shaped bugs).
+
+  cln-repro capture-compile --source-file <path.cln> --component <target> \\
+                    --expected-exit-code <int> [--expected-stderr-match <str> ...] \\
+                    [--expected-stdout-match <str> ...] [--no-file]
+      Capture a failing 'cln compile' (compile-time bugs).
+
+  cln-repro run <issue-url-or-tarball-path>
+      Replay a tarball anywhere.
+
+Run 'cln-repro <command> --help' for details.
+EOF
+  exit 1
+fi
+shift
+
+case "$CMD" in
+  capture)         exec "$SCRIPT_DIR/lib/capture.sh" "$@" ;;
+  capture-compile) exec "$SCRIPT_DIR/lib/capture-compile.sh" "$@" ;;
+  run)             exec "$SCRIPT_DIR/lib/run.sh" "$@" ;;
+  *) echo "unknown command: $CMD" >&2; exit 2 ;;
+esac
