@@ -40,7 +40,7 @@ EOF
 COMPONENT_REPO_compiler="Ivan-Pasco/clean-language-compiler"
 COMPONENT_REPO_node_server="ivan-pasco/clean-node-server"
 COMPONENT_REPO_server="Ivan-Pasco/clean-server"
-COMPONENT_REPO_framework="Ivan-Pasco/clean-framework"
+COMPONENT_REPO_framework="Ivan-Pasco/cleen-framework"
 
 # ---- parse args -----------------------------------------------------------
 SOURCE_FILE=""; COMPONENT=""; EXPECTED_EXIT=""
