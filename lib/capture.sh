@@ -28,6 +28,10 @@ Optional:
   --actor <name>            captured_by field in manifest (default: \$USER)
   --no-file                 build tarball but DO NOT file GitHub issue
   --out <path>              output directory for the tarball (default: /tmp)
+  --links <fingerprint>     dashboard bug fingerprint this tarball reproduces
+                            (full 64-char hex). When a fixer's CI passes this
+                            tarball on a release, the dashboard mirror cron
+                            auto-transitions the linked bug to 'resolved'.
 
 Environment:
   MYSQL_CMD                 override mysql client (default: mysql)
@@ -45,7 +49,7 @@ COMPONENT_REPO_framework="Ivan-Pasco/cleen-framework"
 # ---- parse args -----------------------------------------------------------
 URL="" ; DB_URL="" ; WASM_PATH="" ; SOURCE_PATH="" ; COMPONENT=""
 HOST="http://127.0.0.1:3002" ; REPO="" ; ACTOR="${USER:-unknown}" ; OUT_DIR="/tmp"
-FILE_ISSUE=1
+FILE_ISSUE=1 ; LINKS=""
 EXPECTED_MATCHES=()
 
 while [[ $# -gt 0 ]]; do
@@ -61,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --actor)            ACTOR="$2"; shift 2 ;;
     --no-file)          FILE_ISSUE=0; shift ;;
     --out)              OUT_DIR="$2"; shift 2 ;;
+    --links)            LINKS="$2"; shift 2 ;;
     -h|--help)          usage ;;
     *) echo "unknown arg: $1" >&2; usage ;;
   esac
@@ -74,6 +79,10 @@ done
 [[ ${#EXPECTED_MATCHES[@]} -eq 0 ]] && { echo "at least one --expected-match required"; usage; }
 [[ ! -f "$WASM_PATH" ]] && { echo "wasm not found: $WASM_PATH" >&2; exit 2; }
 [[ ! -d "$SOURCE_PATH" ]] && { echo "source dir not found: $SOURCE_PATH" >&2; exit 2; }
+if [[ -n "$LINKS" ]] && ! [[ "$LINKS" =~ ^[a-f0-9]{64}$ ]]; then
+  echo "--links must be a 64-char lowercase hex fingerprint (got: '$LINKS')" >&2
+  exit 2
+fi
 
 if [[ -z "$REPO" ]]; then
   KEY=$(echo "$COMPONENT" | tr '-' '_')
@@ -216,7 +225,8 @@ export M_FP="$FP" M_COMPONENT="$COMPONENT" M_CAPTURED_AT="$CAPTURED_AT" M_ACTOR=
        M_CLN_VER="$CLN_VER" M_NS_VER="$NS_VER" \
        M_FUI_VER="$FUI_VER" M_FSRV_VER="$FSRV_VER" M_FDATA_VER="$FDATA_VER" \
        M_URL="$URL" M_ACTUAL_STATUS="$ACTUAL_STATUS" \
-       M_WASM_SHA="$WASM_SHA" M_WASM_SIZE="$WASM_SIZE" M_FIXTURE_ROWS="$FIXTURE_ROWS"
+       M_WASM_SHA="$WASM_SHA" M_WASM_SIZE="$WASM_SIZE" M_FIXTURE_ROWS="$FIXTURE_ROWS" \
+       M_LINKS="$LINKS"
 printf '%s\n' "${EXPECTED_MATCHES[@]}" | python3 -c '
 import json, os, sys
 matches = [l for l in sys.stdin.read().splitlines() if l]
@@ -228,6 +238,9 @@ manifest = {
     "project": "clean-errors",
     "captured_at": os.environ["M_CAPTURED_AT"],
     "captured_by": os.environ["M_ACTOR"],
+  },
+  "links": {
+    "dashboard_bug_fingerprint": os.environ.get("M_LINKS") or None,
   },
   "environment": {
     "compiler": os.environ["M_CLN_VER"],
@@ -365,6 +378,12 @@ BODY_FILE=$(mktemp)
   echo ""
   echo "**Trigger**: \`$URL\` returned HTTP $ACTUAL_STATUS (expected 200 with matching content)"
   echo ""
+  if [[ -n "$LINKS" ]]; then
+    # Machine-readable link line for the dashboard mirror cron. Do not
+    # reformat without also updating tarball-sync.sh.
+    echo "**Links dashboard bug**: \`${LINKS}\` <!-- links:${LINKS} -->"
+    echo ""
+  fi
   echo "**Environment**:"
   echo "- compiler \`$CLN_VER\`"
   echo "- node-server \`$NS_VER\`"

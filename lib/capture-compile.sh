@@ -32,6 +32,10 @@ Optional:
   --no-file                      build tarball but do NOT file GitHub issue
   --out <path>                   output directory (default: /tmp)
   --title <str>                  short human title for the issue (default: derived from filename)
+  --links <fingerprint>          dashboard bug fingerprint this tarball reproduces
+                                 (full 64-char hex). When a fixer's CI passes this
+                                 tarball on a release, the dashboard mirror cron
+                                 auto-transitions the linked bug to 'resolved'.
 EOF
   exit 1
 }
@@ -45,7 +49,7 @@ COMPONENT_REPO_framework="Ivan-Pasco/cleen-framework"
 # ---- parse args -----------------------------------------------------------
 SOURCE_FILE=""; COMPONENT=""; EXPECTED_EXIT=""
 PLUGINS=""; REPO=""; ACTOR="${USER:-unknown}"; OUT_DIR="/tmp"; FILE_ISSUE=1
-TITLE=""
+TITLE=""; LINKS=""
 STDERR_MATCHES=(); STDOUT_MATCHES=()
 
 while [[ $# -gt 0 ]]; do
@@ -61,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --no-file)               FILE_ISSUE=0; shift ;;
     --out)                   OUT_DIR="$2"; shift 2 ;;
     --title)                 TITLE="$2"; shift 2 ;;
+    --links)                 LINKS="$2"; shift 2 ;;
     -h|--help)               usage ;;
     *) echo "unknown arg: $1" >&2; usage ;;
   esac
@@ -73,6 +78,14 @@ done
 if [[ ${#STDERR_MATCHES[@]} -eq 0 && ${#STDOUT_MATCHES[@]} -eq 0 ]]; then
   echo "at least one --expected-stderr-match or --expected-stdout-match required"
   usage
+fi
+
+# Validate --links if provided: must be 64 lowercase hex chars.
+if [[ -n "$LINKS" ]]; then
+  if ! [[ "$LINKS" =~ ^[a-f0-9]{64}$ ]]; then
+    echo "--links must be a 64-char lowercase hex fingerprint (got: '$LINKS')" >&2
+    exit 2
+  fi
 fi
 
 if [[ -z "$REPO" ]]; then
@@ -189,7 +202,8 @@ export M_FP="$FP" M_COMPONENT="$COMPONENT" M_CAPTURED_AT="$CAPTURED_AT" M_ACTOR=
        M_CLN_VER="$CLN_VER" M_FUI_VER="$FUI_VER" M_FSRV_VER="$FSRV_VER" \
        M_FDATA_VER="$FDATA_VER" M_FCANVAS_VER="$FCANVAS_VER" \
        M_SRC_FILE="$SRC_BASENAME" M_SRC_SHA="$SRC_SHA" \
-       M_EXPECTED_EXIT="$EXPECTED_EXIT" M_ACTUAL_EXIT="$ACTUAL_EXIT" M_PLUGINS="$PLUGINS"
+       M_EXPECTED_EXIT="$EXPECTED_EXIT" M_ACTUAL_EXIT="$ACTUAL_EXIT" M_PLUGINS="$PLUGINS" \
+       M_LINKS="$LINKS"
 
 { printf 'STDERR\t%s\n' "${STDERR_MATCHES[@]:-}"; printf 'STDOUT\t%s\n' "${STDOUT_MATCHES[@]:-}"; } | python3 -c '
 import json, os, sys
@@ -207,6 +221,9 @@ manifest = {
     "project": "clean-errors",
     "captured_at": os.environ["M_CAPTURED_AT"],
     "captured_by": os.environ["M_ACTOR"],
+  },
+  "links": {
+    "dashboard_bug_fingerprint": os.environ.get("M_LINKS") or None,
   },
   "environment": {
     "compiler": os.environ["M_CLN_VER"],
@@ -352,6 +369,12 @@ BODY_FILE=$(mktemp)
   echo ""
   echo "**Trigger**: \`cln compile $SRC_BASENAME\` — expected exit **$EXPECTED_EXIT**, actual **$ACTUAL_EXIT**"
   echo ""
+  if [[ -n "$LINKS" ]]; then
+    # Machine-readable link line for the dashboard mirror cron. Do not
+    # reformat this line without also updating tarball-sync.sh.
+    echo "**Links dashboard bug**: \`${LINKS}\` <!-- links:${LINKS} -->"
+    echo ""
+  fi
   echo "**Environment**:"
   echo "- compiler \`$CLN_VER\`"
   echo "- frame.ui \`$FUI_VER\`, frame.server \`$FSRV_VER\`, frame.data \`$FDATA_VER\`, frame.canvas \`$FCANVAS_VER\`"
