@@ -9,7 +9,12 @@
 # curl, gh (for capture only).
 set -euo pipefail
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SRC="${BASH_SOURCE[0]}"
+while [[ -L "$SRC" ]]; do
+  TARGET="$(readlink "$SRC")"
+  [[ "$TARGET" = /* ]] && SRC="$TARGET" || SRC="$(dirname "$SRC")/$TARGET"
+done
+SCRIPT_DIR="$( cd "$( dirname "$SRC" )" && pwd )"
 CMD="${1:-}"
 
 if [[ -z "$CMD" ]]; then
