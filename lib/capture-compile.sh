@@ -350,8 +350,8 @@ if [[ $FILE_ISSUE -eq 1 ]]; then
   echo "  issue: $ISSUE_URL"
   echo ""
   echo "  Now attach $TARBALL to the issue. Options:"
-  echo "  1. gh release upload repro-tarballs $TARBALL --repo Ivan-Pasco/clean-errors --clobber"
-  echo "     (recommended — durable URL, works with 'cln-repro run <issue-url>')"
+  echo "  1. gh release upload repro-tarballs $TARBALL --repo Ivan-Pasco/cln-repro --clobber"
+  echo "     (recommended — public repo, anonymous curl works, cln-repro run <issue-url> resolves it)"
   echo "  2. Drag+drop into the issue via web UI (GitHub user-attachments, less durable)"
 else
   echo ""

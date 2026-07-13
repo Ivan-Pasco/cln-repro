@@ -404,11 +404,12 @@ if [[ $FILE_ISSUE -eq 1 ]]; then
   #
   # Fallback strategy for this MVP: move tarball to a well-known path locally,
   # print the URL, ask the operator to drag+drop into the issue via the web UI.
-  # Real automation will use `gh release upload` once a release exists.
+  # Public tarball store (anonymous curl works, so any fixer CI can pull).
   echo ""
-  echo "  IMPORTANT: attach $TARBALL to the issue via web UI (drag+drop into a comment)."
-  echo "  Or run: gh release create tarballs-store --repo $REPO --notes 'Tarball store' 2>/dev/null; \\"
-  echo "          gh release upload tarballs-store $TARBALL --repo $REPO --clobber"
+  echo "  IMPORTANT: attach $TARBALL to the issue. Recommended:"
+  echo "     gh release upload repro-tarballs $TARBALL --repo Ivan-Pasco/cln-repro --clobber"
+  echo "  Then edit the issue body to include:"
+  echo "     https://github.com/Ivan-Pasco/cln-repro/releases/download/repro-tarballs/$(basename $TARBALL)"
 else
   echo ""
   echo "  Skipping GitHub issue filing (--no-file). Tarball at $TARBALL"
